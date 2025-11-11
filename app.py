@@ -13,7 +13,7 @@ warnings.filterwarnings(‘ignore’)
 class SingleTrajectoryTortuosity:
 “”“Gera trajetória com tortuosidade modelada.”””
 
-```
+
 def __init__(self, md_spacing: float, smoothing_window: int, 
              mwd_noise_mode: str, mwd_noise_factor: float):
     self.md_spacing = md_spacing
@@ -201,13 +201,12 @@ def _classify_section_simple(self, inc: float) -> str:
         return 'tangent'
     else:
         return 'horizontal'
-```
 
 def parse_trajectory_file(uploaded_file) -> List[Tuple[str, pd.DataFrame]]:
 “”“Parse arquivo CSV ou Excel.”””
 trajectories = []
 
-```
+
 if uploaded_file.name.endswith('.csv'):
     content = uploaded_file.read().decode('utf-8')
     df = pd.read_csv(io.StringIO(content), sep=';', decimal=',', skiprows=2)
@@ -226,7 +225,6 @@ elif uploaded_file.name.endswith(('.xlsx', '.xls')):
             trajectories.append((sheet_name, df[['MD', 'Inc', 'Azi', 'TVD']]))
 
 return trajectories
-```
 
 def export_to_csv(df: pd.DataFrame) -> str:
 “”“Exporta DataFrame para CSV.”””
@@ -235,19 +233,19 @@ output.write(“Seq;Measured;Incl;Azimuth;TVD;DLS\n”)
 output.write(”#;depth;angle;angle;depth;(deg/30m)\n”)
 output.write(”===;========;======;=======;======;========\n”)
 
-```
+
 for i, row in df.iterrows():
     line = (f"{i+1};{row['MD']:.2f};{row['Inc_adjusted']:.2f};"
            f"{row['Azi_adjusted']:.2f};{row['TVD']:.2f};{row['DLS']:.2f}\n")
     output.write(line.replace('.', ','))
 
 return output.getvalue()
-```
+
 
 def main():
 st.set_page_config(page_title=“Gerador de Tortuosidade”, layout=“wide”)
 
-```
+
 st.title("Gerador de Tortuosidade para Simulacao de Desgaste")
 
 with st.expander("Como funciona esta ferramenta?", expanded=False):
@@ -509,7 +507,7 @@ if st.button("Gerar Trajetoria com Tortuosidade", type="primary"):
     except Exception as e:
         st.error(f"Erro no processamento: {str(e)}")
         st.exception(e)
-```
+
 
 if **name** == ‘**main**’:
 main()
