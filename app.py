@@ -200,7 +200,7 @@ def parse_trajectory_file(uploaded_file):
         df = pd.read_csv(io.StringIO(content), sep=";", decimal=",", skiprows=2)
         df.columns = ["Seq", "MD", "Inc", "Azi", "TVD", "COTA", "Vertical", 
                       "Displ_NS", "Displ_EW", "DLS", "UTM_Y", "UTM_X"]
-        trajectories.append((uploaded_file.name, df[["MD", "Inc", "Azi", "TVD"]]))
+        trajectories.append((uploaded_file.name, df[["MD", "Inc", "Azi", "TVD", "DLS"]]))
     
     elif uploaded_file.name.endswith((".xlsx", ".xls")):
         excel_file = pd.ExcelFile(uploaded_file)
@@ -210,7 +210,12 @@ def parse_trajectory_file(uploaded_file):
             if len(df.columns) >= 4:
                 df.columns = ["Seq", "MD", "Inc", "Azi", "TVD", "COTA", "Vertical", 
                               "Displ_NS", "Displ_EW", "DLS", "UTM_Y", "UTM_X"][:len(df.columns)]
-                trajectories.append((sheet_name, df[["MD", "Inc", "Azi", "TVD"]]))
+                
+                cols_to_keep = ["MD", "Inc", "Azi", "TVD"]
+                if "DLS" in df.columns:
+                    cols_to_keep.append("DLS")
+                
+                trajectories.append((sheet_name, df[cols_to_keep]))
     
     return trajectories
 
@@ -433,13 +438,19 @@ def main():
                 
                 col1, col2, col3 = st.columns(3)
                 
-                dls_plan = result["DLS"].iloc[1:].mean()
-                dls_max = result["DLS"].max()
-                increment = ((dls_plan / target_df["DLS"].iloc[1:].mean() - 1) * 100) if target_df["DLS"].iloc[1:].mean() > 0 else 0
+                dls_adjusted_mean = result["DLS"].iloc[1:].mean()
+                dls_adjusted_max = result["DLS"].max()
                 
-                col1.metric("DLS Medio Planejado", f"{target_df['DLS'].iloc[1:].mean():.2f} graus/30m")
-                col2.metric("DLS Medio Ajustado", f"{dls_plan:.2f} graus/30m", f"{increment:+.1f}%")
-                col3.metric("DLS Maximo Gerado", f"{dls_max:.2f} graus/30m")
+                if "DLS" in target_df.columns and target_df["DLS"].iloc[1:].mean() > 0:
+                    dls_original_mean = target_df["DLS"].iloc[1:].mean()
+                    increment = ((dls_adjusted_mean / dls_original_mean - 1) * 100)
+                else:
+                    dls_original_mean = 0
+                    increment = 0
+                
+                col1.metric("DLS Medio Planejado", f"{dls_original_mean:.2f} graus/30m" if dls_original_mean > 0 else "N/A")
+                col2.metric("DLS Medio Ajustado", f"{dls_adjusted_mean:.2f} graus/30m", f"{increment:+.1f}%" if increment != 0 else None)
+                col3.metric("DLS Maximo Gerado", f"{dls_adjusted_max:.2f} graus/30m")
                 
                 st.dataframe(
                     result[["MD", "Inc", "Inc_adjusted", "Azi", "Azi_adjusted", "DLS"]].head(20),
