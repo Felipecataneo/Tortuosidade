@@ -123,7 +123,7 @@ class SingleTrajectoryTortuosity:
             return "horizontal"
     
     
-    def apply_tortuosity(self, planned_df):
+    def apply_tortuosity(self, planned_df, max_dls=10.0, smoothing_passes=2):
         plan = self.load_trajectory_from_df(planned_df)
         
         md_range = plan["MD"].max() - plan["MD"].min()
@@ -152,6 +152,13 @@ class SingleTrajectoryTortuosity:
         plan["Inc_adjusted"] = np.clip(plan["Inc"] + plan["delta_inc"], 0, 90)
         plan["Azi_adjusted"] = (plan["Azi"] + plan["delta_azi"]) % 360
         
+        for _ in range(smoothing_passes):
+            plan["Inc_adjusted"] = gaussian_filter1d(plan["Inc_adjusted"], sigma=1.5)
+            plan["Azi_adjusted"] = gaussian_filter1d(plan["Azi_adjusted"], sigma=1.5)
+        
+        plan["Inc_adjusted"] = np.clip(plan["Inc_adjusted"], 0, 90)
+        plan["Azi_adjusted"] = plan["Azi_adjusted"] % 360
+        
         plan["DLS"] = 0.0
         for i in range(1, len(plan)):
             p1 = pd.Series({"Inc": plan.loc[i-1, "Inc_adjusted"], 
@@ -160,7 +167,26 @@ class SingleTrajectoryTortuosity:
             p2 = pd.Series({"Inc": plan.loc[i, "Inc_adjusted"], 
                            "Azi": plan.loc[i, "Azi_adjusted"],
                            "MD": plan.loc[i, "MD"]})
-            plan.loc[i, "DLS"] = self.calc_dls(p1, p2)
+            dls_calc = self.calc_dls(p1, p2)
+            plan.loc[i, "DLS"] = min(dls_calc, max_dls)
+        
+        for i in range(1, len(plan)):
+            if plan.loc[i, "DLS"] > max_dls:
+                ratio = max_dls / plan.loc[i, "DLS"]
+                
+                inc_delta = plan.loc[i, "Inc_adjusted"] - plan.loc[i-1, "Inc_adjusted"]
+                azi_delta = plan.loc[i, "Azi_adjusted"] - plan.loc[i-1, "Azi_adjusted"]
+                
+                plan.loc[i, "Inc_adjusted"] = plan.loc[i-1, "Inc_adjusted"] + inc_delta * ratio
+                plan.loc[i, "Azi_adjusted"] = (plan.loc[i-1, "Azi_adjusted"] + azi_delta * ratio) % 360
+                
+                p1 = pd.Series({"Inc": plan.loc[i-1, "Inc_adjusted"], 
+                               "Azi": plan.loc[i-1, "Azi_adjusted"],
+                               "MD": plan.loc[i-1, "MD"]})
+                p2 = pd.Series({"Inc": plan.loc[i, "Inc_adjusted"], 
+                               "Azi": plan.loc[i, "Azi_adjusted"],
+                               "MD": plan.loc[i, "MD"]})
+                plan.loc[i, "DLS"] = self.calc_dls(p1, p2)
         
         return plan
     
@@ -327,9 +353,21 @@ def main():
     )
     
     smoothing_window = st.sidebar.slider(
-        "Janela de Suavizacao",
+        "Janela de Suavizacao (calibracao)",
         min_value=0, max_value=10, value=3,
-        help="Remove ruido de medicao. 0 = sem suavizacao, 5 = forte."
+        help="Remove ruido de medicao dos dados historicos. 0 = sem suavizacao."
+    )
+    
+    max_dls = st.sidebar.number_input(
+        "DLS Maximo Permitido (graus/30m)",
+        min_value=3.0, max_value=20.0, value=10.0, step=0.5,
+        help="Limita dog-legs irrealistas. Tipico: 8-12 graus/30m para BHA convencional."
+    )
+    
+    smoothing_passes = st.sidebar.slider(
+        "Passes de Suavizacao (output)",
+        min_value=0, max_value=5, value=2,
+        help="Suaviza trajetoria final para evitar picos de DLS. 2-3 recomendado."
     )
     
     mwd_noise_mode = st.sidebar.radio(
@@ -353,6 +391,9 @@ def main():
     
     Modo atual: {mwd_noise_mode.upper()}
     Fator: {mwd_noise_factor*100:.0f}%
+    
+    DLS Max: {max_dls:.1f} graus/30m
+    Suavizacao output: {smoothing_passes} passes
     """)
     
     col1, col2 = st.columns(2)
@@ -427,7 +468,7 @@ def main():
                 )
                 
                 st.info("Aplicando tortuosidade na trajetoria alvo...")
-                result = model.apply_tortuosity(target_df)
+                result = model.apply_tortuosity(target_df, max_dls=max_dls, smoothing_passes=smoothing_passes)
             
             st.success("Processamento concluido!")
             
@@ -451,6 +492,9 @@ def main():
                 col1.metric("DLS Medio Planejado", f"{dls_original_mean:.2f} graus/30m" if dls_original_mean > 0 else "N/A")
                 col2.metric("DLS Medio Ajustado", f"{dls_adjusted_mean:.2f} graus/30m", f"{increment:+.1f}%" if increment != 0 else None)
                 col3.metric("DLS Maximo Gerado", f"{dls_adjusted_max:.2f} graus/30m")
+                
+                if dls_adjusted_max > max_dls * 0.9:
+                    st.warning(f"Aviso: DLS maximo ({dls_adjusted_max:.2f}) proximo ao limite ({max_dls:.2f}). Considere aumentar o limite ou passes de suavizacao.")
                 
                 st.dataframe(
                     result[["MD", "Inc", "Inc_adjusted", "Azi", "Azi_adjusted", "DLS"]].head(20),
