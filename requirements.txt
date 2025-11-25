@@ -3,3 +3,6 @@ pandas
 numpy 
 scipy 
 openpyxl
+scikit-learn
+
+
